@@ -89,7 +89,7 @@ readData :: (d -> a) -> WM d s a
 readData f = WM $ \ d s -> pure (s, f d)
 
 getState :: (s -> a) -> WM d s a
-getState f = WM $ \ _ s -> pure (s, f s)
+getState f = WM $ const $ pure . ((,) <*> f)
 
 modifyState :: (s -> s) -> WM d s ()
 modifyState f = WM $ \ _ s -> pure (f s, ())
