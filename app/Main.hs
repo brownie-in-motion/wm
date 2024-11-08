@@ -137,8 +137,10 @@ handleEvent (KeyDown key) = case handleKey key handler of
             | hasMod (layoutMod keybinds) = (>> applyLayout) <$> handleLayout k
             | otherwise = Nothing
         handleLayout x
-            | x == vertical keybinds = Just $ mapLayout (rotate H)
-            | x == horizontal keybinds = Just $ mapLayout (rotate V)
+            -- honestly i don't know how i flipped V and H
+            -- i might rethink this
+            | x == vertical keybinds = Just $ mapLayout (rotate V)
+            | x == horizontal keybinds = Just $ mapLayout (rotate H)
             | x == left keybinds = Just $ mapLayout (changeFocus L)
             | x == right keybinds = Just $ mapLayout (changeFocus R)
             | x == up keybinds = Just $ mapLayout (changeFocus U)
