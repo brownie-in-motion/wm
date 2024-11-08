@@ -67,7 +67,7 @@ module Layout where
 -- so three children with sizes 1, 2, 3 would take up 1/6, 2/6, and 3/6 of the
 -- parent respectively
 
-import Data.Maybe (mapMaybe)
+import Data.Maybe (fromMaybe, mapMaybe)
 
 -- represents a nonempty list
 -- this tightens up our representation a bit
@@ -90,6 +90,13 @@ includeList (NonEmpty a as) = a : as
 fromList :: [a] -> Maybe (NonEmpty a)
 fromList (x : xs) = Just (NonEmpty x xs)
 fromList [] = Nothing
+
+firstElement :: NonEmpty a -> a
+firstElement (NonEmpty a _) = a
+
+lastElement :: NonEmpty a -> a
+lastElement (NonEmpty h []) = h
+lastElement (NonEmpty h (_ : as)) = lastElement (NonEmpty h as)
 
 instance Functor NonEmpty where
     fmap f (NonEmpty a as) = NonEmpty (f a) (fmap f as)
@@ -174,6 +181,9 @@ insertLeaf value ls = LeafSelect {
 getSelected :: LeafSelect a -> a
 getSelected = leafValue . leafSelectData
 
+-- todo: handle the cases where
+-- - doing nothing in a singleton would give us the right orientation
+-- - unwrapping a singleton with a singleton above would do that
 rotate :: Orientation -> LeafSelect a -> LeafSelect a
 rotate o ls = LeafSelect {
         -- add a root above the selected window with the same size
@@ -333,6 +343,15 @@ removeLeaf f (LeafSelect { leafSelectData = ld, leafSelectContext = lc })
             leafSelectContext = fmap (removeLeafFromContext f) lc
         }
 
+-- move the focus given a direction
+
+-- what orientation a direction can move in
+supportedOrientation :: Direction -> Orientation
+supportedOrientation L = H
+supportedOrientation R = H
+supportedOrientation U = V
+supportedOrientation D = V
+
 changeFocusHelper :: Direction -> TreeSelect a -> Maybe (TreeSelect a)
 changeFocusHelper d ts = case attemptMove of
     Just tree -> Just tree
@@ -340,17 +359,16 @@ changeFocusHelper d ts = case attemptMove of
         Left _ -> Nothing
         Right up -> changeFocusHelper d up
     where
-        allowedOrientation = case d of { L -> H; R -> H; U -> V; D -> V }
         attemptMove = let NonEmpty c _ = treeSelectContext ts in
-            if contextOrientation c == allowedOrientation
+            if contextOrientation c == supportedOrientation d
                 then
                     if d == L || d == U
-                        then shiftLeft ts
-                        else shiftRight ts
+                        then shiftFocusLeft ts
+                        else shiftFocusRight ts
                 else Nothing
 
-shiftLeft :: TreeSelect a -> Maybe (TreeSelect a)
-shiftLeft TreeSelect {
+shiftFocusLeft :: TreeSelect a -> Maybe (TreeSelect a)
+shiftFocusLeft TreeSelect {
     treeSelect = focus,
     treeSelectContext = NonEmpty c cs
 } = case contextLeft c of
@@ -358,17 +376,15 @@ shiftLeft TreeSelect {
     l : ls -> Just $ TreeSelect {
         treeSelect = l,
         treeSelectContext = NonEmpty
-            (
-                c {
-                    contextLeft = ls,
-                    contextRight = focus : contextRight c
-                }
-            )
+            c {
+                contextLeft = ls,
+                contextRight = focus : contextRight c
+            }
             cs
     }
 
-shiftRight :: TreeSelect a -> Maybe (TreeSelect a)
-shiftRight TreeSelect {
+shiftFocusRight :: TreeSelect a -> Maybe (TreeSelect a)
+shiftFocusRight TreeSelect {
     treeSelect = focus,
     treeSelectContext = NonEmpty c cs
 } = case contextRight c of
@@ -376,12 +392,10 @@ shiftRight TreeSelect {
     r : rs -> Just $ TreeSelect {
         treeSelect = r,
         treeSelectContext = NonEmpty
-            (
-                c {
-                    contextLeft = focus : contextLeft c,
-                    contextRight = rs
-                }
-            )
+            c {
+                contextLeft = focus : contextLeft c,
+                contextRight = rs
+            }
             cs
     }
 
@@ -389,3 +403,167 @@ shiftRight TreeSelect {
 -- if we can't, just stay in place
 changeFocus :: Direction -> LeafSelect a -> LeafSelect a
 changeFocus d l = maybe l pickLeaf (changeFocusHelper d (includeTreeSelect l))
+
+-- move the *focused pane* given a direction
+-- some cases:
+-- a. the immediate parent has room to move. do it
+-- b. the immediate parent does not
+--   1. removing this pane would make the parent empty.
+--      in that case, replace the parent with us. rinse and repeat
+--   2. the parent has children in the other direction.
+--      in this case, look up the tree for a parent in the desired direction
+--     - choose a sensible size
+--     - drop it in the logical place
+
+shiftPaneLeft :: LeafSelect a -> Maybe (LeafSelect a)
+shiftPaneLeft LeafSelect {
+    leafSelectData = focus,
+    leafSelectContext = NonEmpty c cs
+} = case contextLeft c of
+    [] -> Nothing
+    -- if the next pane is a leaf, move over it
+    l@(Leaf _) : ls -> Just $ LeafSelect {
+        leafSelectData = focus,
+        leafSelectContext = NonEmpty
+            c {
+                contextLeft = ls,
+                contextRight = l : contextRight c
+            }
+            cs
+    }
+    -- if it's a root, enter it
+    -- since we enter towards the left (from the right) we add to the end
+    Root rd : ls -> Just $ LeafSelect {
+            leafSelectData = focus {
+                leafSize = size $ lastElement $ rootChildren rd
+            },
+            leafSelectContext = NonEmpty
+                -- descend into it
+                ImmediateContext {
+                    contextOrientation = rootOrientation rd,
+                    contextSize = rootSize rd,
+                    contextLeft = includeList $ rootChildren rd,
+                    contextRight = []
+                }
+                -- and remove it from above
+                $ (: cs) c {
+                    contextLeft = ls
+                }
+        }
+
+shiftPaneRight :: LeafSelect a -> Maybe (LeafSelect a)
+shiftPaneRight LeafSelect {
+    leafSelectData = focus,
+    leafSelectContext = NonEmpty c cs
+} = case contextRight c of
+    [] -> Nothing
+    l@(Leaf _) : ls -> Just $ LeafSelect {
+        leafSelectData = focus,
+        leafSelectContext = NonEmpty
+            (
+                c {
+                    contextLeft = l : contextLeft c,
+                    contextRight = ls
+                }
+            )
+            cs
+    }
+    -- since we enter towards the right (from the left) we add to the beginning
+    Root rd : ls -> Just $ LeafSelect {
+            leafSelectData = focus {
+                leafSize = size $ firstElement $ rootChildren rd
+            },
+            leafSelectContext = NonEmpty
+                ImmediateContext {
+                    contextOrientation = rootOrientation rd,
+                    contextSize = rootSize rd,
+                    contextLeft = [],
+                    contextRight = includeList $ rootChildren rd
+                }
+                $ (: cs) c {
+                    contextRight = ls
+                }
+        }
+
+rootFromContext :: ImmediateContext a -> Maybe (RootData a)
+rootFromContext ImmediateContext {
+    contextOrientation = o,
+    contextSize = s,
+    contextLeft = left,
+    contextRight = right
+} = RootData o s <$> case (left, right) of
+    (l : ls, rs) -> Just $ NonEmpty l (ls ++ rs)
+    ([], r : rs) -> Just $ NonEmpty r rs
+    ([], []) -> Nothing
+
+removeFocus :: LeafSelect a -> Maybe (LeafData a, TreeSelect a)
+removeFocus LeafSelect {
+    leafSelectData = ts,
+    leafSelectContext = NonEmpty ctx ctxs
+} = case (rootFromContext ctx, ctxs) of
+        (Just rd, c : cs) -> Just (
+                ts,
+                TreeSelect {
+                    treeSelect = Root rd,
+                    treeSelectContext = NonEmpty c cs
+                }
+            )
+        _ -> Nothing
+
+ascendToOrientation :: Orientation -> TreeSelect a -> Maybe (TreeSelect a)
+ascendToOrientation o ts = let NonEmpty c _ = treeSelectContext ts in
+    if contextOrientation c == o
+        then Just ts
+        else case ascend ts of
+            Left _ -> Nothing
+            Right nts -> ascendToOrientation o nts
+
+insertLeft :: LeafData a -> TreeSelect a -> LeafSelect a
+insertLeft leaf TreeSelect {
+    treeSelect = focus,
+    treeSelectContext = NonEmpty c cs
+} = LeafSelect {
+    -- for now we have the leaf be the same size as the focus
+    leafSelectData = leaf { leafSize = size focus },
+    leafSelectContext = NonEmpty
+        c { contextRight = focus : contextRight c }
+        cs
+}
+
+insertRight :: LeafData a -> TreeSelect a -> LeafSelect a
+insertRight leaf TreeSelect {
+    treeSelect = focus,
+    treeSelectContext = NonEmpty c cs
+} = LeafSelect {
+    leafSelectData = leaf { leafSize = size focus },
+    leafSelectContext = NonEmpty
+        c { contextLeft = focus : contextLeft c }
+        cs
+}
+
+movePaneHelper :: Direction -> LeafSelect a -> Maybe (LeafSelect a)
+movePaneHelper d ls = case attemptMove of
+    -- successfully did it locally
+    Just moved -> Just moved
+    -- otherwise we lift the pane out and look for somewhere to put it back
+    Nothing -> do
+        (leaf, ts) <- removeFocus ls
+        -- not implemented: if we ascend to the top and want to move in the
+        -- opposite direction, we can reroot the tree. for example if i have
+        -- a vertical stack and want to move left
+        nts <- ascendToOrientation allowedOrientation ts
+        pure $ if d == L || d == U
+            then insertLeft leaf nts
+            else insertRight leaf nts
+    where
+        allowedOrientation = supportedOrientation d
+        attemptMove = let NonEmpty c _ = leafSelectContext ls in
+            if contextOrientation c == allowedOrientation
+                then
+                    if d == L || d == U
+                        then shiftPaneLeft ls
+                        else shiftPaneRight ls
+                else Nothing
+
+movePane :: Direction -> LeafSelect a -> LeafSelect a
+movePane d ls = fromMaybe ls $ movePaneHelper d ls

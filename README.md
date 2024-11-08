@@ -5,7 +5,8 @@ a work in progress!
 
 - [x] Handle window creation and deletion
 - [x] Manage tiling layout
-- [ ] Support resizing and rearranging
+- [x] Allow rearranging windows
+- [ ] Support resizing windows
 - [ ] Support multiple workspaces
 - [ ] Draw more decorations (title bars, workspace indicators)
 - [ ] Allow floating windows

@@ -35,6 +35,7 @@ selectedFrameStyle = XFrameStyle {
 
 data Binds = Binds {
         layoutMod :: XModifier,
+        extraMod :: XModifier,
         vertical :: XKey,
         horizontal :: XKey,
         left :: XKey,
@@ -47,6 +48,7 @@ data Binds = Binds {
 keybinds :: Binds
 keybinds = Binds {
         layoutMod = XModShift,
+        extraMod = XModControl,
         vertical = XKeyV,
         horizontal = XKeyH,
         left = XKeyLeft,
@@ -133,20 +135,33 @@ handleEvent (KeyDown key) = case handleKey key handler of
     Just a -> a
     Nothing -> pure ()
     where
+        act = (>> applyLayout) . mapLayout
+        primary = layoutMod keybinds
+        secondary = extraMod keybinds
+
         handler hasMod k
-            | hasMod (layoutMod keybinds) = (>> applyLayout) <$> handleLayout k
+            | hasMod primary && hasMod secondary = handleBoth k
+            | hasMod primary = handleLayout k
             | otherwise = Nothing
+
         handleLayout x
             -- honestly i don't know how i flipped V and H
             -- i might rethink this
-            | x == vertical keybinds = Just $ mapLayout (rotate V)
-            | x == horizontal keybinds = Just $ mapLayout (rotate H)
-            | x == left keybinds = Just $ mapLayout (changeFocus L)
-            | x == right keybinds = Just $ mapLayout (changeFocus R)
-            | x == up keybinds = Just $ mapLayout (changeFocus U)
-            | x == down keybinds = Just $ mapLayout (changeFocus D)
+            | x == vertical keybinds = Just $ act (rotate V)
+            | x == horizontal keybinds = Just $ act (rotate H)
+            | x == left keybinds = Just $ act (changeFocus L)
+            | x == right keybinds = Just $ act (changeFocus R)
+            | x == up keybinds = Just $ act (changeFocus U)
+            | x == down keybinds = Just $ act (changeFocus D)
             -- we will have to save this process and gracefully kill it
             | x == terminal keybinds = Just $ liftIO openTerminal
+            | otherwise = Nothing
+
+        handleBoth x
+            | x == left keybinds = Just $ act (movePane L)
+            | x == right keybinds = Just $ act (movePane R)
+            | x == up keybinds = Just $ act (movePane U)
+            | x == down keybinds = Just $ act (movePane D)
             | otherwise = Nothing
 
 handleEvent (KeyUp _) = liftIO $ putStrLn "keyup"
@@ -171,7 +186,12 @@ handleEvent (MapRequest window) = do
             (right keybinds, [layoutMod keybinds]),
             (up keybinds, [layoutMod keybinds]),
             (down keybinds, [layoutMod keybinds]),
-            (terminal keybinds, [layoutMod keybinds])
+            (terminal keybinds, [layoutMod keybinds]),
+
+            (left keybinds, [layoutMod keybinds, extraMod keybinds]),
+            (right keybinds, [layoutMod keybinds, extraMod keybinds]),
+            (up keybinds, [layoutMod keybinds, extraMod keybinds]),
+            (down keybinds, [layoutMod keybinds, extraMod keybinds])
         ]
         window
     applyLayout
