@@ -17,6 +17,7 @@ module Core (
     applyFrameLayout,
     child,
     giveInputFocus,
+    takeInputFocus,
     runWM,
     readData,
     getState,
@@ -38,7 +39,7 @@ module Core (
     grabKeys,
 ) where
 
-import Control.Monad (forever, join, when)
+import Control.Monad (forever, join)
 import Data.Bits ((.|.), (.&.))
 import Data.Bifunctor (first, second)
 import Data.Foldable (for_, sequenceA_)
@@ -49,19 +50,11 @@ import Graphics.X11.Xlib.Extras (
         Event (..),
         WindowAttributes (..),
         WindowChanges (..),
-        changeProperty32,
         configureWindow,
         getEvent,
         getWindowAttributes,
-        getWMProtocols,
         unmapWindow,
-        propModeAppend,
-        propModeReplace,
-        setClientMessageEvent,
-        setEventType,
     )
-
-import Debug.Trace (trace)
 
 -- general reader + state + io effect
 
@@ -536,3 +529,10 @@ giveInputFocus w = do
     -- - messaging the children with TAKE_FOCUS, if they support it
     -- - setting children WM state
     -- - setting root WM state
+
+takeInputFocus :: XWM s ()
+takeInputFocus = do
+    d <- readData display
+    r <- readData root
+    t <- getTime
+    liftIO $ X.setInputFocus d r X.revertToParent t

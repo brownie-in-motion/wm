@@ -17,7 +17,7 @@ import Layout
 -- config
 
 frameBorder :: Int
-frameBorder = 3
+frameBorder = 2
 
 defaultFrameStyle :: XFrameStyle
 defaultFrameStyle = XFrameStyle {
@@ -111,7 +111,7 @@ applyLayout = do
             sequenceA_ actions
             restyle selectedFrameStyle (getSelected lo)
             giveInputFocus (child $ getSelected lo)
-        Nothing -> pure ()
+        Nothing -> takeInputFocus
     where
         drawFrame x y w h f = do
             applyFrameLayout x y (w - 2 * frameBorder) (h - 2 * frameBorder) f
