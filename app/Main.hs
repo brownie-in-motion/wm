@@ -61,23 +61,23 @@ openTerminal = void $ startProcess "xterm"
 
 -- logic
 
-newtype XState = XState {
+newtype State = State {
         layout :: Maybe (LeafSelect XFrame)
     }
 
-initializeState :: XState
-initializeState = XState { layout = Nothing }
+initializeState :: State
+initializeState = State { layout = Nothing }
 
-addFrame :: XFrame -> XWM XState ()
-addFrame f = modifyState $ \ s -> s {
+addFrame :: XFrame -> XWM State ()
+addFrame f = modifyAppState $ \ s -> s {
         layout = Just $ case layout s of
             Just l -> insertLeaf f l
             Nothing -> createLeafSelect f
     }
 
-getFrames :: XWindow -> XWM XState [XFrame]
+getFrames :: XWindow -> XWM State [XFrame]
 getFrames window = do
-    previous <- getState layout
+    previous <- getAppState layout
     pure $ case previous of
         Just lo -> filter
             (isFraming window)
@@ -85,7 +85,7 @@ getFrames window = do
         Nothing -> []
 
 -- should only be one but who knows
-removeFrames :: XWindow -> XWM XState [XFrame]
+removeFrames :: XWindow -> XWM State [XFrame]
 removeFrames window = do
     -- theoretically we could return removed frames in removeLeaf
     -- or do something fancier with effects
@@ -96,9 +96,9 @@ removeFrames window = do
     bindLayout (removeLeaf (isFraming window))
     pure removed
 
-applyLayout :: XWM XState ()
+applyLayout :: XWM State ()
 applyLayout = do
-    l <- getState layout
+    l <- getAppState layout
     case l of
         Just lo -> do
             width <- getRootWidth
@@ -110,23 +110,24 @@ applyLayout = do
                     (intoTree $ includeTreeSelect lo)
             sequenceA_ actions
             restyle selectedFrameStyle (getSelected lo)
+            giveInputFocus (child $ getSelected lo)
         Nothing -> pure ()
     where
         drawFrame x y w h f = do
             applyFrameLayout x y (w - 2 * frameBorder) (h - 2 * frameBorder) f
             restyle defaultFrameStyle f
 
-mapLayout :: (LeafSelect XFrame -> LeafSelect XFrame) -> XWM XState ()
-mapLayout f = modifyState $ \ s -> s {
+mapLayout :: (LeafSelect XFrame -> LeafSelect XFrame) -> XWM State ()
+mapLayout f = modifyAppState $ \ s -> s {
         layout = f <$> layout s
     }
 
-bindLayout :: (LeafSelect XFrame -> Maybe (LeafSelect XFrame)) -> XWM XState ()
-bindLayout f = modifyState $ \ s -> s {
+bindLayout :: (LeafSelect XFrame -> Maybe (LeafSelect XFrame)) -> XWM State ()
+bindLayout f = modifyAppState $ \ s -> s {
         layout = layout s >>= f
     }
 
-handleEvent :: XEvent -> XWM XState ()
+handleEvent :: XEvent -> XWM State ()
 
 handleEvent (KeyDown key) = case handleKey key handler of
     Just a -> a
@@ -182,5 +183,5 @@ handleEvent (UnmapNotify window) = do
 main :: IO ()
 main = do
     d <- initializeData
-    _ <- runWM (listen handleEvent) d initializeState
+    _ <- runXWM (listen handleEvent) d initializeState
     pure ()

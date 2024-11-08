@@ -15,10 +15,15 @@ module Core (
     applyWindowChanges,
     applyWindowLayout,
     applyFrameLayout,
+    child,
+    giveInputFocus,
     runWM,
     readData,
     getState,
     modifyState,
+    getAppState,
+    modifyAppState,
+    runXWM,
     getRootHeight,
     getRootWidth,
     liftIO,
@@ -33,9 +38,10 @@ module Core (
     grabKeys,
 ) where
 
-import Control.Monad (forever, join)
+import Control.Monad (forever, join, when)
 import Data.Bits ((.|.), (.&.))
-import Data.Foldable (sequenceA_)
+import Data.Bifunctor (first, second)
+import Data.Foldable (for_, sequenceA_)
 import Data.Word (Word64)
 import Foreign.C.Types (CULong)
 import qualified Graphics.X11 as X
@@ -43,11 +49,19 @@ import Graphics.X11.Xlib.Extras (
         Event (..),
         WindowAttributes (..),
         WindowChanges (..),
+        changeProperty32,
         configureWindow,
         getEvent,
         getWindowAttributes,
-        unmapWindow
+        getWMProtocols,
+        unmapWindow,
+        propModeAppend,
+        propModeReplace,
+        setClientMessageEvent,
+        setEventType,
     )
+
+import Debug.Trace (trace)
 
 -- general reader + state + io effect
 
@@ -120,7 +134,28 @@ dimensions (XData { display = d, root = r }) = do
     wa <- getWindowAttributes d r
     pure (fromIntegral $ wa_width wa, fromIntegral $ wa_height wa)
 
-type XWM s a = WM XData s a
+newtype XState = XState {
+        time :: X.Time
+    }
+
+type XWM s a = WM XData (XState, s) a
+
+getAppState :: (s -> a) -> XWM s a
+getAppState f = f <$> getState snd
+
+modifyAppState :: (s -> s) -> XWM s ()
+modifyAppState f = modifyState (second f)
+
+getTime :: XWM s X.Time
+getTime = getState (time . fst)
+
+setTime :: X.Time -> XWM s ()
+setTime t = modifyState $ first $ const $ XState t
+
+runXWM :: XWM s a -> XData -> s -> IO (s, a)
+runXWM wm d s = do
+    ((_, r), a) <- runWM wm d (XState 0, s)
+    pure (r, a)
 
 data XEvent
     = KeyDown XKeyData
@@ -190,15 +225,31 @@ getRootHeight = snd <$> join (readData (liftIO . dimensions))
 getRootWidth :: XWM s Int
 getRootWidth = fst <$> join (readData (liftIO . dimensions))
 
+getEventTime :: Event -> Maybe X.Time
+getEventTime (KeyEvent { ev_time = t }) = Just t
+getEventTime (ButtonEvent { ev_time = t }) = Just t
+getEventTime (CrossingEvent { ev_time = t }) = Just t
+getEventTime (SelectionRequest { ev_time = t }) = Just t
+getEventTime (SelectionClear { ev_time = t }) = Just t
+getEventTime (PropertyEvent { ev_time = t }) = Just t
+getEventTime (ScreenSaverNotifyEvent { ev_time = t }) = Just t
+getEventTime _ = Nothing
+
 listen :: (XEvent -> XWM s ()) -> XWM s ()
 listen f = do
     d <- readData display
-    forever $ liftIO (nextEvent d) >>= tryEvent f
+    forever $ do
+        e <- liftIO (nextEvent d)
+        trySetTime e
+        tryEvent f e
     where
         -- in theory we only have to allocate space for one event total
         -- but that makes this function quite a bit more gross
         nextEvent :: X.Display -> IO Event
         nextEvent d = X.allocaXEvent (liftA2 (*>) (X.nextEvent d) getEvent)
+
+        trySetTime :: Event -> XWM s ()
+        trySetTime e = for_ (getEventTime e) setTime
 
         tryEvent :: (XEvent -> XWM s ()) -> Event -> XWM s ()
         tryEvent g e = result *> liftIO (print e)
@@ -210,6 +261,9 @@ data XWindowChanges = XWindowChanges WindowChanges CULong
 
 newtype XWindow = XWindow X.Window deriving (Eq, Show)
 data XFrame = XFrame X.Window XWindow deriving (Eq, Show)
+
+child :: XFrame -> XWindow
+child (XFrame _ w) = w
 
 class XWindowLike a where
     toWindow :: a -> X.Window
@@ -470,3 +524,15 @@ grabKeys keys window = do
                 X.grabModeAsync
     let actions = map (uncurry grabOne) keys
     liftIO $ sequenceA_ actions
+
+giveInputFocus :: XWindowLike a => a -> XWM s ()
+giveInputFocus w = do
+    d <- readData display
+    t <- getTime
+    liftIO $ X.setInputFocus d (toWindow w) X.revertToParent t
+ 
+    -- plenty of spec compliance to be done here
+    -- for example:
+    -- - messaging the children with TAKE_FOCUS, if they support it
+    -- - setting children WM state
+    -- - setting root WM state
