@@ -105,7 +105,7 @@ applyLayout = do
             height <- getRootHeight
             let actions = useLayout
                     0 0
-                    (width - frameBorder * 2) (height - frameBorder * 2)
+                    width height
                     drawFrame
                     (intoTree $ includeTreeSelect lo)
             sequenceA_ actions
@@ -113,7 +113,7 @@ applyLayout = do
         Nothing -> pure ()
     where
         drawFrame x y w h f = do
-            applyFrameLayout x y w h f
+            applyFrameLayout x y (w - 2 * frameBorder) (h - 2 * frameBorder) f
             restyle defaultFrameStyle f
 
 mapLayout :: (LeafSelect XFrame -> LeafSelect XFrame) -> XWM XState ()
