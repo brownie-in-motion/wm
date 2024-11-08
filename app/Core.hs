@@ -297,9 +297,10 @@ applyFrameLayout x y w h fr@(XFrame _ wi) = do
         (fromIntegral h)
 
     -- only resize the *window*
-    liftIO $ X.resizeWindow
+    liftIO $ X.moveResizeWindow
         d
         (toWindow wi)
+        0 0
         (fromIntegral w)
         (fromIntegral h)
 
