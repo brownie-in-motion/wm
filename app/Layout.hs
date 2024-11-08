@@ -1,6 +1,76 @@
 module Layout where
 
+-- for now, our layout is structured like a tree
+--
+-- +-----------------+-----------+-----------+
+-- |                 |           |           |
+-- |        A        |           |     F     |
+-- |                 |           |           |
+-- +-----+-----+-----+     E     +-----------+
+-- |     |     |     |           |           |
+-- |  B  | (C) |  D  |           |     G     |
+-- |     |     |     |           |           |
+-- +-----+-----+-----+-----------+-----------+
+--
+-- as an example, the above might be represented logically as
+--
+-- root (horizontal)
+-- |
+-- +-- root (vertical)
+-- |   |
+-- |   +-- leaf A
+-- |   |
+-- |   +-- root (horizontal)
+-- |       |
+-- |       +-- leaf B
+-- |       +-- leaf C
+-- |       +-- leaf D
+-- |
+-- +-- leaf E
+-- |
+-- +-- root (vertical)
+--    |
+--    +-- leaf F
+--    +-- leaf G
+--
+-- we also currently allow a single leaf to be focused at a time
+-- so instead of storing the tree above, we choose a representation that keeps
+-- this focus data structurally. if C is the selected leaf, we have
+--
+-- focus C
+--
+-- - how to construct the (B C D) subtree given the focus
+--   - direction: horizontal
+--   - left: [leaf B]          ; the children before the focus
+--   - right: [leaf D]         ; the children after the focus
+--
+-- - how to construct the (A (B C D)) subtree given the (B C D) subtree
+--   - direction: vertical
+--   - left: [leaf A]          ; the children before the (B C D) subtree
+--   - right: []               ; the children after the (B C D) subtree
+--
+-- - how to construct (A (B C D) (E (F G))) given (A (B C D))
+--  - direction: horizontal
+--  - left: []                 ; the children before the (A (B C D)) subtree
+--  - right:                   ; the children after the (A (B C D)) subtree
+--    - leaf E
+--    - root (vertical)
+--      - leaf F
+--      - leaf G
+--
+-- in the code below, this is named LeafSelect
+-- sometimes it's convenient for algorithms to focus on an entire subtree, and
+-- not a leaf (then focus in on a leaf later). so we have something for that
+--
+-- note that in reality we size data in addition to orientation
+-- these (rational) sizes represent their *relative* proportion of the parent,
+-- so three children with sizes 1, 2, 3 would take up 1/6, 2/6, and 3/6 of the
+-- parent respectively
+
 import Data.Maybe (mapMaybe)
+
+-- represents a nonempty list
+-- this tightens up our representation a bit
 
 data NonEmpty a = NonEmpty a [a] deriving (Eq, Show)
 
@@ -35,8 +105,11 @@ data LeafData a = LeafData {
         leafValue :: a
     } deriving (Eq, Show)
 
--- note the looseness in our representation: you can have nested
--- singleton roots that logically represent the same layout
+-- note some looseness in our representation:
+-- - you can have nested singleton roots that represent the same layout
+-- - because sizes are relative, children with sizes (1 2 3) and (2 4 6) would
+--   result in the same final layout
+
 data RootData a = RootData {
         rootOrientation :: Orientation,
         rootSize :: Rational,
