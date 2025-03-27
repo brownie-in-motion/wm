@@ -12,6 +12,7 @@ executable wm
     other-modules: Core, Layout
     build-depends:
         base ^>=4.18.2.1,
+        containers ^>= 0.6.7,
         X11 ^>=1.10,
         typed-process ^>= 0.2.12.0,
     hs-source-dirs: app

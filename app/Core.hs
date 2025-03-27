@@ -37,6 +37,8 @@ module Core (
     isFraming,
     handleKey,
     grabKeys,
+    hide,
+    reveal
 ) where
 
 import Control.Monad (forever, join)
@@ -359,11 +361,31 @@ unframe (XFrame f x) = do
 isFraming :: XWindow -> XFrame -> Bool
 isFraming x (XFrame _ w) = w == x
 
+hide :: XWindowLike w => w -> XWM s ()
+hide w = do
+    d <- readData display
+    liftIO $ unmapWindow d (toWindow w)
+
+reveal :: XWindowLike w => w -> XWM s ()
+reveal w = do
+    d <- readData display
+    liftIO $ X.mapWindow d (toWindow w)
+
 data XKeyData = XKeyData X.KeySym X.Modifier
 data XButtonData = XButtonData X.Button X.KeyMask
 
 data XKey
-    = XKeyA
+    = XKey1
+    | XKey2
+    | XKey3
+    | XKey4
+    | XKey5
+    | XKey6
+    | XKey7
+    | XKey8
+    | XKey9
+    | XKey0
+    | XKeyA
     | XKeyB
     | XKeyC
     | XKeyD
@@ -412,6 +434,16 @@ data XModifier
 -- looking into it later
 toXKey :: X.KeySym -> Maybe XKey
 toXKey code
+    | code == X.xK_1 = Just XKey1
+    | code == X.xK_2 = Just XKey2
+    | code == X.xK_3 = Just XKey3
+    | code == X.xK_4 = Just XKey4
+    | code == X.xK_5 = Just XKey5
+    | code == X.xK_6 = Just XKey6
+    | code == X.xK_7 = Just XKey7
+    | code == X.xK_8 = Just XKey8
+    | code == X.xK_9 = Just XKey9
+    | code == X.xK_0 = Just XKey0
     | code == X.xK_a = Just XKeyA
     | code == X.xK_b = Just XKeyB
     | code == X.xK_c = Just XKeyC
@@ -446,6 +478,16 @@ toXKey code
     | otherwise = Nothing
 
 fromXKey :: XKey -> X.KeySym
+fromXKey XKey1 = X.xK_1
+fromXKey XKey2 = X.xK_2
+fromXKey XKey3 = X.xK_3
+fromXKey XKey4 = X.xK_4
+fromXKey XKey5 = X.xK_5
+fromXKey XKey6 = X.xK_6
+fromXKey XKey7 = X.xK_7
+fromXKey XKey8 = X.xK_8
+fromXKey XKey9 = X.xK_9
+fromXKey XKey0 = X.xK_0
 fromXKey XKeyA = X.xK_a
 fromXKey XKeyB = X.xK_b
 fromXKey XKeyC = X.xK_c
